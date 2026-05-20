@@ -28,7 +28,7 @@ Project(SmartUp)/
 
 ### 1. Reponi clone qiling
 ```bash
-git clone https://github.com/USERNAME/smartup-etl.git
+git clone https://github.com/Saydullayev-Oybek/smartup-etl.git
 cd smartup-etl
 ```
 
