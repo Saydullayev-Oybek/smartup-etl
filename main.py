@@ -1,6 +1,6 @@
 import os
 from config import OUTPUT_DIR
-from pipelines import products, customers
+from pipelines import products
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
