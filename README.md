@@ -24,7 +24,7 @@ Project(SmartUp)/
 
 ---
 
-## O'rnatish (O'quvchilar uchun — bosqichma-bosqich)
+## O'rnatish
 
 ### 1. Reponi clone qiling
 ```bash
