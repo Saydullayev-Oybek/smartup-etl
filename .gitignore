@@ -1,0 +1,16 @@
+# Maxfiy ma'lumotlar — hech qachon GitHub ga yuklanmasin
+auth.json
+
+# Claude IDE papkasi
+.claude/
+
+# Virtual environment
+smartup_env/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Cleaned data (katta Excel fayllar)
+CleanedData/*.xlsx
