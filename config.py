@@ -9,6 +9,7 @@ TIMEOUT      = 30
 ENDPOINTS = {
     "inventory":      "https://smartup.online/b/anor/mxsx/mr/inventory$export",
     "natural_person": "https://smartup.online/b/anor/mxsx/mr/natural_person$export",
+    "order":          "https://smartup.online/b/trade/txs/tdeal/order$export",
 }
 
 # ── Database ──────────────────────────────────────────────────────────────────
