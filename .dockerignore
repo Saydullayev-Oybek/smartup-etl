@@ -1,0 +1,9 @@
+my_env/
+.vscode/
+.claude/
+CLAUDE.md
+__pycache__/
+*.pyc
+*.pyo
+auth.json
+CleanedData/

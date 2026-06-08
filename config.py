@@ -1,4 +1,5 @@
 import json
+import os
 import base64
 from pathlib import Path
 
@@ -27,7 +28,7 @@ ENDPOINTS = {
 }
 
 # ── Database ──────────────────────────────────────────────────────────────────
-DB_URL = "postgresql://postgres:0121@localhost:5432/smartup"
+DB_URL = os.getenv("DB_URL", "postgresql://postgres:0121@localhost:5432/smartup")
 
 # ── Output ────────────────────────────────────────────────────────────────────
 OUTPUT_DIR = "CleanedData"
