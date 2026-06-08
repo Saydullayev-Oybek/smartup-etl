@@ -1,11 +1,16 @@
 # Maxfiy ma'lumotlar — hech qachon GitHub ga yuklanmasin
 auth.json
 
-# Claude IDE papkasi
+# Claude IDE fayllar
 .claude/
+CLAUDE.md
+
+# IDE
+.vscode/
 
 # Virtual environment
 smartup_env/
+my_env/
 
 # Python cache
 __pycache__/

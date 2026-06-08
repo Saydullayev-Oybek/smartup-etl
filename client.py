@@ -5,6 +5,11 @@ import pandas as pd
 from config import TIMEOUT
 
 
+def _safe_print(text: str):
+    sys.stdout.buffer.write(text.encode("utf-8", errors="replace") + b"\n")
+    sys.stdout.buffer.flush()
+
+
 def fetch_post(url: str, headers: dict, body: dict, key: str) -> pd.DataFrame:
     """POST so'rov yuborib DataFrame qaytaradi."""
     print(f"[FETCH POST] {url}")
@@ -13,7 +18,7 @@ def fetch_post(url: str, headers: dict, body: dict, key: str) -> pd.DataFrame:
 
     if response.status_code != 200:
         print(f"[XATO] Status: {response.status_code}")
-        print(response.text)
+        _safe_print(response.text)
         sys.exit(1)
 
     records = response.json().get(key) or []
@@ -39,7 +44,7 @@ def fetch(url: str, headers: dict, key: str) -> pd.DataFrame:
 
     if response.status_code != 200:
         print(f"[XATO] Status: {response.status_code}")
-        print(response.text)
+        _safe_print(response.text)
         sys.exit(1)
 
     records = response.json().get(key) or []

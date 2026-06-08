@@ -19,3 +19,4 @@ def save_to_db(df: pd.DataFrame, table: str) -> None:
     engine = create_engine(DB_URL)
     df.to_sql(table, engine, if_exists="replace", index=False)
     print(f"[DB] '{table}' — {len(df)} ta qator yuklandi.")
+

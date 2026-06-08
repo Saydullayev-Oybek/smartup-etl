@@ -7,14 +7,13 @@ from client import fetch_post
 from loader import save_to_db
 
 
-def _default_body() -> dict:
-    """So'nggi 7 kunlik orderlarni olish uchun request body."""
-    today = datetime.today()
-    week_ago = today - timedelta(days=7)
-    return {
-        "begin_deal_date": week_ago.strftime("%d.%m.%Y"),
-        "end_deal_date":   today.strftime("%d.%m.%Y"),
-    }
+def _date_chunks(start: datetime, end: datetime, days: int = 30):
+    """start dan end gacha 30 kunlik intervallar qaytaradi."""
+    cursor = start
+    while cursor < end:
+        chunk_end = min(cursor + timedelta(days=days - 1), end)
+        yield cursor, chunk_end
+        cursor = chunk_end + timedelta(days=1)
 
 
 # ── Transform funksiyalari ────────────────────────────────────────────────────
@@ -152,16 +151,41 @@ def build_order_consignments(raw: pd.DataFrame) -> pd.DataFrame:
 
 # ── Run ───────────────────────────────────────────────────────────────────────
 
-def run(body: dict = None):
+def _fetch_all(begin_date: datetime, end_date: datetime) -> pd.DataFrame:
+    """begin_date dan end_date gacha oyma-oy so'rov yuborib birlashtiradi."""
+    headers = get_headers()
+    frames = []
+    for start, end in _date_chunks(begin_date, end_date):
+        print(f"  [{start.strftime('%d.%m.%Y')} — {end.strftime('%d.%m.%Y')}]")
+        body = {
+            "begin_modified_on": start.strftime("%d.%m.%Y"),
+            "end_modified_on":   end.strftime("%d.%m.%Y"),
+        }
+        chunk = fetch_post(ENDPOINTS["order"], headers, body, key="order")
+        if not chunk.empty:
+            frames.append(chunk)
+
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True)
+
+
+def run(begin_date: str = None, end_date: str = None, body: dict = None):
+    """
+    begin_date / end_date — "DD.MM.YYYY" formatida (ixtiyoriy).
+    Agar ko'rsatilmasa, so'nggi 30 kun olinadi.
+    body — to'liq custom request body (qolgan parametrlarni bekor qiladi).
+    """
     print("=== Orders pipeline ===")
 
-    # 1. Extract
-    raw = fetch_post(
-        ENDPOINTS["order"],
-        get_headers(),
-        body or _default_body(),
-        key="order",
-    )
+    if body:
+        raw = fetch_post(ENDPOINTS["order"], get_headers(), body, key="order")
+    else:
+        end   = datetime.strptime(end_date,   "%d.%m.%Y") if end_date   else datetime.today()
+        start = datetime.strptime(begin_date, "%d.%m.%Y") if begin_date else end - timedelta(days=30)
+        print(f"Davr: {start.strftime('%d.%m.%Y')} — {end.strftime('%d.%m.%Y')}")
+        raw = _fetch_all(start, end)
+
     if raw.empty:
         print("[INFO] Hech qanday order topilmadi.")
         return
@@ -172,6 +196,8 @@ def run(body: dict = None):
     order_gifts        = build_order_gifts(raw)
     order_actions      = build_order_actions(raw)
     order_consignments = build_order_consignments(raw)
+
+    print(f"[JAMI] {len(orders)} ta order, {len(order_products)} ta mahsulot qatori")
 
     # 3. Load — Excel
     orders.to_excel(os.path.join(OUTPUT_DIR, "orders.xlsx"),                         index=False)

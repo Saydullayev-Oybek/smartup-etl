@@ -1,25 +1,37 @@
 # SmartUp ETL Pipeline
 
-API dan ma'lumot olib, tozalab, PostgreSQL ga yuklaydigan loyiha.
+SmartUp ERP API dan ma'lumot olib, pandas bilan tozalab, Excel va PostgreSQL ga yuklaydigan ETL loyiha.
 
 ---
 
 ## Loyiha strukturasi
 
 ```
-Project(SmartUp)/
+smartup-etl/
 │
-├── config.py          ← API va DB sozlamalari
-├── client.py          ← API dan ma'lumot olish
-├── loader.py          ← PostgreSQL ga yuklash
-├── main.py            ← ishga tushiruvchi
+├── config.py               ← API endpointlari, DB URL, auth headers
+├── client.py               ← fetch() va fetch_post() — API so'rovlari
+├── loader.py               ← save_to_db() — DataFrame → PostgreSQL
+├── main.py                 ← ishga tushiruvchi, barcha pipelinelarni chaqiradi
 │
 ├── pipelines/
-│   ├── products.py    ← tayyor namuna
-│   ├── customers.py   ← shablon (sizniki)
-│   └── orders.py      ← shablon (sizniki)
+│   ├── products.py         ← products, product_group, inv_kind, sector
+│   ├── orders.py           ← orders, order_products, gifts, actions, consignments
+│   ├── natural_person.py   ← natural_persons, group, room
+│   ├── legal_person.py     ← legal_persons, group, bank_account, room
+│   ├── visit.py            ← visits, visit_person_types, visit_comments
+│   ├── writeoff.py         ← writeoffs, writeoff_items
+│   ├── payments.py         ← payments
+│   ├── cash_operations.py  ← cash_operations, cash_operation_refs
+│   ├── product_group.py    ← product_groups, product_group_types
+│   ├── inventory_price.py  ← inventory_prices
+│   ├── person_group.py     ← person_groups, person_group_types
+│   ├── returns.py          ← returns, return_products (mijozlardan)
+│   └── returns_to_supplier.py ← supplier_returns, supplier_return_items
 │
-└── CleanedData/       ← Excel fayllar saqlanadi
+├── auth.json.example       ← namuna (auth.json gitignore da)
+├── requerements.txt        ← dependencies
+└── CleanedData/            ← Excel fayllar (avtomatik yaratiladi)
 ```
 
 ---
@@ -27,22 +39,28 @@ Project(SmartUp)/
 ## O'rnatish
 
 ### 1. Reponi clone qiling
+
 ```bash
 git clone https://github.com/Saydullayev-Oybek/smartup-etl.git
 cd smartup-etl
 ```
 
-### 2. Kerakli kutubxonalarni o'rnating
+### 2. Virtual environment yarating va kutubxonalarni o'rnating
+
 ```bash
+python -m venv venv
+venv\Scripts\activate
 pip install -r requerements.txt
 ```
 
 ### 3. `auth.json` faylini yarating
+
 ```bash
-# auth.json.example faylidan nusxa oling
 copy auth.json.example auth.json
 ```
-Keyin `auth.json` faylini oching va o'z login/parolingizni kiriting:
+
+`auth.json` ni oching va SmartUp login/parolingizni kiriting:
+
 ```json
 {
     "username": "SIZNING_LOGINIZ",
@@ -50,102 +68,100 @@ Keyin `auth.json` faylini oching va o'z login/parolingizni kiriting:
 }
 ```
 
-### 4. `config.py` da DB ni sozlang
+### 4. `config.py` da DB URL ni sozlang
+
 ```python
 DB_URL = "postgresql://postgres:PAROLINGIZ@localhost:5432/smartup"
 ```
 
 ### 5. Ishga tushiring
+
 ```bash
 python main.py
 ```
 
 ---
 
-## ETL jarayoni qanday ishlaydi
+## Pipelinelar va jadvallar
+
+| Pipeline | Jadvallar | Tavsif |
+| --- | --- | --- |
+| `products` | `products`, `product_group`, `product_inventory_kind`, `product_sector` | Mahsulot katalogi |
+| `orders` | `orders`, `order_products`, `order_gifts`, `order_actions`, `order_consignments` | Buyurtmalar (POST, 30-kunlik chunk) |
+| `natural_person` | `natural_persons`, `natural_person_group`, `natural_person_room` | Jismoniy shaxslar |
+| `legal_person` | `legal_persons`, `legal_person_group`, `legal_person_bank_account`, `legal_person_room` | Yuridik shaxslar |
+| `visit` | `visits`, `visit_person_types`, `visit_comments` | Savdo vakili tashriflari |
+| `writeoff` | `writeoffs`, `writeoff_items` | Hisobdan chiqarishlar |
+| `payments` | `payments` | Mijozlardan to'lovlar |
+| `cash_operations` | `cash_operations`, `cash_operation_refs` | Kassa operatsiyalari |
+| `product_group` | `product_groups`, `product_group_types` | Mahsulot guruhlari |
+| `inventory_price` | `inventory_prices` | Mahsulot narxlari |
+| `person_group` | `person_groups`, `person_group_types` | Shaxs guruhlari |
+| `returns` | `returns`, `return_products` | Mijozlardan qaytarish |
+| `returns_to_supplier` | `supplier_returns`, `supplier_return_items` | Yetkazib beruvchilarga qaytarish |
+
+---
+
+## ETL jarayoni
 
 ```
-1. EXTRACT  — API dan ma'lumot olinadi
-2. TRANSFORM — ma'lumot tozalanadi, to'g'ri turga o'tkaziladi
-3. LOAD     — Excel va PostgreSQL ga saqlanadi
+SmartUp API → client.py (fetch/fetch_post) → pipelines/*.py (transform) → loader.py + Excel
 ```
 
-### Har bir pipeline shu 3 qadamdan iborat:
+### GET endpointlari (filtr yo'q, barcha ma'lumot)
 
 ```python
-# 1. Extract
 raw = fetch(url, headers, key="...")
+```
 
-# 2. Transform
-clean_data = build_...(raw)
+### POST endpointlari (sana oralig'i bilan, 30-kunlik chunk)
 
-# 3. Load
-clean_data.to_excel("CleanedData/....xlsx")
-save_to_db(clean_data, "jadval_nomi")
+```python
+raw = fetch_post(url, headers, body={"begin_modified_on": "...", "end_modified_on": "..."}, key="...")
 ```
 
 ---
 
-## Yangi pipeline yozish — 4 qadam
+## Yangi pipeline qo'shish
 
-### 1-qadam — `config.py` ga endpoint qo'shing
+1. **`config.py`** ga endpoint qo'shing:
 
 ```python
 ENDPOINTS = {
-    "inventory": f"{BASE_URL}/mr/inventory$export",
-    "customers": f"{BASE_URL}/...",   # ← yangi endpoint
+    ...
+    "new_entity": "https://smartup.online/b/.../new_entity$export",
 }
 ```
 
-### 2-qadam — `pipelines/customers.py` ni to'ldiring
-
-`products.py` ga qarab yozing.
+1. **`pipelines/new_entity.py`** yarating (`products.py` ga qarab):
 
 ```python
-def build_customers(raw: pd.DataFrame) -> pd.DataFrame:
-    pass
-
+def build_new_entity(raw: pd.DataFrame) -> pd.DataFrame:
+    ...
 
 def run():
-    pass
+    raw = fetch(ENDPOINTS["new_entity"], get_headers(), key="new_entity")
+    df = build_new_entity(raw)
+    df.to_excel(os.path.join(OUTPUT_DIR, "new_entity.xlsx"), index=False)
+    save_to_db(df, "new_entity")
 ```
 
-### 3-qadam — `main.py` ga qo'shing
+1. **`main.py`** ga qo'shing:
 
 ```python
-from pipelines import products, customers
+from pipelines import ..., new_entity
 
-products.run()
-customers.run()   # ← yangi qator
+new_entity.run()
 ```
-
-### 4-qadam — Tekshiring
-
-```bash
-python main.py
-```
-
-PostgreSQL da `SELECT * FROM customers LIMIT 10;` bilan natijani ko'ring.
 
 ---
 
-## Fayllar vazifasi
-
-| Fayl | Vazifasi | O'zgartirish kerakmi? |
-|------|----------|----------------------|
-| `config.py` | URL, DB, headerlar | Yangi endpoint qo'shganda |
-| `client.py` | API so'rov yuboradi | Yo'q |
-| `loader.py` | DB ga yuklaydi | Yo'q |
-| `main.py` | Hammasini ishga tushiradi | Yangi pipeline qo'shganda |
-| `pipelines/*.py` | ETL logikasi | Har bir jadval uchun |
-
----
-
-## Xato chiqsa
+## Xatolar
 
 | Xato | Sabab | Yechim |
-|------|-------|--------|
+| --- | --- | --- |
 | `[XATO] Status: 401` | Login/parol noto'g'ri | `auth.json` ni tekshiring |
-| `[XATO] Status: 404` | URL noto'g'ri | `config.py` da endpoint ni tekshiring |
+| `[XATO] Status: 400` | Noto'g'ri so'rov parametri | `config.py` da endpoint yoki body ni tekshiring |
+| `[XATO] Status: 429` | API rate limit | Bir necha daqiqa kuting |
 | `connection refused` | PostgreSQL ishlamayapti | DB ni ishga tushiring |
-| `column not found` | API ustun nomini o'zgartirgan | `df.columns` chiqarib tekshiring |
+| `PermissionError` on xlsx | Fayl Excel da ochiq | Faylni yoping va qayta ishga tushiring |
