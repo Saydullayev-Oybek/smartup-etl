@@ -1,8 +1,8 @@
 import pytest
 import requests
 
-import client
-from exceptions import FetchError
+from core import client
+from core.exceptions import FetchError
 
 
 class FakeResponse:

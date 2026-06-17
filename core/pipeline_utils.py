@@ -10,10 +10,10 @@ import os
 
 import pandas as pd
 
-from config import OUTPUT_DIR, WRITE_EXCEL
-from loader import save_to_db
-from logging_config import get_logger
-from validation import validate_table
+from core.config import OUTPUT_DIR, WRITE_EXCEL
+from core.loader import save_to_db
+from core.logging_config import get_logger
+from core.validation import validate_table
 
 log = get_logger(__name__)
 

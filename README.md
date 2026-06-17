@@ -9,20 +9,23 @@ stand-alone (`python main.py`) or on a schedule via Apache Airflow.
 ## Architecture
 
 ```
-SmartUp API ──> client.py ──> pipelines/*.py ──> pipeline_utils.emit() ──> loader.py ──> PostgreSQL
-                (fetch,         (transform,         (validate +              (idempotent
-                 retry)          explode)            Excel + load)            merge)
+SmartUp API ──> core/client.py ──> pipelines/*.py ──> core.pipeline_utils.emit() ──> core/loader.py ──> PostgreSQL
+                (fetch,             (transform,          (validate +                   (idempotent
+                 retry)              explode)             Excel + load)                 merge)
 ```
+
+Reusable building blocks live in the **`core/`** package; one pipeline per SmartUp
+entity lives in **`pipelines/`** and imports from `core.*`.
 
 | Module | Role |
 | --- | --- |
-| [config.py](config.py) | Env-driven config: endpoints, DB URL, auth, retry/load settings. No secrets in source. |
-| [client.py](client.py) | `fetch` / `fetch_post` — pooled `requests.Session` with retry/backoff; raises `FetchError`. |
-| [transforms.py](transforms.py) | Vectorised helpers: `explode_records`, `to_int64`, `to_numeric`, `select`. |
-| [validation.py](validation.py) | Pre-load data-quality checks (null/duplicate keys); warn or strict. |
-| [loader.py](loader.py) | `save_to_db` — engine singleton, transactional, idempotent merge (or legacy replace). |
-| [pipeline_utils.py](pipeline_utils.py) | `emit` — validate + optional Excel + load, in one call. |
-| [logging_config.py](logging_config.py) | Central logging (text or JSON, env-driven level). |
+| [core/config.py](core/config.py) | Env-driven config: endpoints, DB URL, auth, retry/load settings. No secrets in source. |
+| [core/client.py](core/client.py) | `fetch` / `fetch_post` — pooled `requests.Session` with retry/backoff; raises `FetchError`. |
+| [core/transforms.py](core/transforms.py) | Vectorised helpers: `explode_records`, `to_int64`, `to_numeric`, `select`. |
+| [core/validation.py](core/validation.py) | Pre-load data-quality checks (null/duplicate keys); warn or strict. |
+| [core/loader.py](core/loader.py) | `save_to_db` — engine singleton, transactional, idempotent merge (or legacy replace). |
+| [core/pipeline_utils.py](core/pipeline_utils.py) | `emit` — validate + optional Excel + load, in one call. |
+| [core/logging_config.py](core/logging_config.py) | Central logging (text or JSON, env-driven level); `core/exceptions.py` — typed errors. |
 | [main.py](main.py) | Entry point — runs every pipeline with per-pipeline failure isolation. |
 | [dags/smartup_etl_dag.py](dags/smartup_etl_dag.py) | Airflow DAG (dimensions → barrier → facts). |
 
@@ -95,14 +98,14 @@ Set `LOAD_STRATEGY=replace` to fall back to the legacy drop-and-recreate.
 
 ## Adding a new pipeline
 
-1. Add the endpoint to `ENDPOINTS` in [config.py](config.py).
+1. Add the endpoint to `ENDPOINTS` in [core/config.py](core/config.py).
 2. Create `pipelines/<name>.py`:
 
 ```python
-from client import fetch
-from config import ENDPOINTS, get_headers
-from pipeline_utils import emit
-from transforms import select, to_int64
+from core.client import fetch
+from core.config import ENDPOINTS, get_headers
+from core.pipeline_utils import emit
+from core.transforms import select, to_int64
 
 def build_entity(raw):
     df = select(raw, ["entity_id", "name", ...])

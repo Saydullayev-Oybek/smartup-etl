@@ -1,8 +1,8 @@
 import pandas as pd
 import pytest
 
-import validation
-from exceptions import DataValidationError
+from core import validation
+from core.exceptions import DataValidationError
 
 
 def _int64(values):

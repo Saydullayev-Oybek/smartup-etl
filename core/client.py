@@ -12,9 +12,9 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from config import HTTP_BACKOFF_FACTOR, HTTP_RETRIES, TIMEOUT
-from exceptions import FetchError
-from logging_config import get_logger
+from core.config import HTTP_BACKOFF_FACTOR, HTTP_RETRIES, TIMEOUT
+from core.exceptions import FetchError
+from core.logging_config import get_logger
 
 log = get_logger(__name__)
 

@@ -17,7 +17,9 @@ from functools import lru_cache
 from pathlib import Path
 from urllib.parse import quote_plus
 
-_ROOT = Path(__file__).resolve().parent
+# config.py lives in core/, so the project root is one level up — this is where
+# .env and auth.json are discovered.
+_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _load_dotenv() -> None:

@@ -12,8 +12,8 @@ from collections.abc import Iterable
 
 import pandas as pd
 
-from exceptions import DataValidationError
-from logging_config import get_logger
+from core.exceptions import DataValidationError
+from core.logging_config import get_logger
 
 log = get_logger(__name__)
 
