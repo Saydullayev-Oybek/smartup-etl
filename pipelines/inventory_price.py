@@ -1,45 +1,40 @@
-import os
 import pandas as pd
 
-from config import ENDPOINTS, OUTPUT_DIR, get_headers
 from client import fetch
-from loader import save_to_db
+from config import ENDPOINTS, get_headers
+from logging_config import get_logger
+from pipeline_utils import emit
+from transforms import explode_records, to_int64, to_numeric
+
+log = get_logger(__name__)
+
+_COLUMNS = [
+    "product_id", "inventory_code", "inventory_barcode",
+    "price_type_code", "card_code", "price",
+]
 
 
 def build_inventory_prices(raw: pd.DataFrame) -> pd.DataFrame:
-    rows = []
-    for _, rec in raw.iterrows():
-        for pt in (rec.get("price_type") or []):
-            rows.append({
-                "product_id":        rec.get("product_id"),
-                "inventory_code":    rec.get("inventory_code"),
-                "inventory_barcode": rec.get("inventory_barcode"),
-                "price_type_code":   pt.get("price_type_code"),
-                "card_code":         pt.get("card_code"),
-                "price":             pt.get("price"),
-            })
-
-    if not rows:
-        return pd.DataFrame()
-
-    df = pd.DataFrame(rows)
-    df["product_id"] = pd.to_numeric(df["product_id"], errors="coerce").astype("Int64")
-    df["price"]      = pd.to_numeric(df["price"],      errors="coerce")
+    df = explode_records(raw, ["product_id", "inventory_code", "inventory_barcode"], "price_type")
+    if df.empty:
+        return df
+    df = df.reindex(columns=_COLUMNS)
+    to_int64(df, ["product_id"])
+    to_numeric(df, ["price"])
     return df.reset_index(drop=True)
 
 
 def run():
-    print("=== Inventory Price pipeline ===")
+    log.info("Inventory Price pipeline started")
 
     raw = fetch(ENDPOINTS["Inventory_price"], get_headers(), key="inventory")
     if raw.empty:
-        print("[INFO] Hech qanday ma'lumot topilmadi.")
+        log.info("No inventory prices found.")
         return
 
     prices = build_inventory_prices(raw)
-    print(f"[JAMI] {len(prices)} ta narx yozuvi")
+    log.info("Inventory prices: %d rows", len(prices))
 
-    prices.to_excel(os.path.join(OUTPUT_DIR, "inventory_prices.xlsx"), index=False)
-    save_to_db(prices, "inventory_prices")
+    emit(prices, excel_name="inventory_prices.xlsx", table="inventory_prices", key="product_id")
 
-    print("=== Inventory Price pipeline tugadi ===")
+    log.info("Inventory Price pipeline finished")

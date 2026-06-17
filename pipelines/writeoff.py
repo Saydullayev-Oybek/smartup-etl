@@ -1,9 +1,12 @@
-import os
 import pandas as pd
 
-from config import ENDPOINTS, OUTPUT_DIR, get_headers
 from client import fetch
-from loader import save_to_db
+from config import ENDPOINTS, get_headers
+from logging_config import get_logger
+from pipeline_utils import emit
+from transforms import explode_records, select, to_int64, to_numeric
+
+log = get_logger(__name__)
 
 
 def build_writeoffs(raw: pd.DataFrame) -> pd.DataFrame:
@@ -13,53 +16,34 @@ def build_writeoffs(raw: pd.DataFrame) -> pd.DataFrame:
         "warehouse_code", "reason_code", "barcode",
         "c_amount", "c_amount_base", "note",
     ]
-    df = raw[[c for c in columns if c in raw.columns]].copy()
-    df["writeoff_id"] = pd.to_numeric(df["writeoff_id"], errors="coerce").astype("Int64")
-    for col in ["c_amount", "c_amount_base"]:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+    df = select(raw, columns)
+    to_int64(df, ["writeoff_id"])
+    to_numeric(df, ["c_amount", "c_amount_base"])
     return df.drop_duplicates(subset=["writeoff_id"]).reset_index(drop=True)
 
 
 def build_writeoff_items(raw: pd.DataFrame) -> pd.DataFrame:
-    rows = []
-    for _, row in raw[["writeoff_id", "writeoff_items"]].iterrows():
-        items = row["writeoff_items"]
-        if not isinstance(items, list):
-            continue
-        for item in items:
-            item["writeoff_id"] = row["writeoff_id"]
-            rows.append(item)
-
-    if not rows:
-        return pd.DataFrame()
-
-    df = pd.DataFrame(rows)
-    df["writeoff_id"]      = pd.to_numeric(df["writeoff_id"],      errors="coerce").astype("Int64")
-    df["writeoff_item_id"] = pd.to_numeric(df["writeoff_item_id"], errors="coerce").astype("Int64")
-    for col in ["quantity"]:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+    df = explode_records(raw, "writeoff_id", "writeoff_items")
+    if df.empty:
+        return df
+    to_int64(df, ["writeoff_id", "writeoff_item_id"])
+    to_numeric(df, ["quantity"])
     return df.reset_index(drop=True)
 
 
 def run():
-    print("=== Writeoff pipeline ===")
+    log.info("Writeoff pipeline started")
 
     raw = fetch(ENDPOINTS["writeoff"], get_headers(), key="writeoff")
     if raw.empty:
-        print("[INFO] Hech qanday ma'lumot topilmadi.")
+        log.info("No writeoffs found.")
         return
 
     writeoffs = build_writeoffs(raw)
-    items     = build_writeoff_items(raw)
+    items = build_writeoff_items(raw)
+    log.info("Writeoffs: %d writeoffs, %d items", len(writeoffs), len(items))
 
-    print(f"[JAMI] {len(writeoffs)} ta writeoff, {len(items)} ta item")
+    emit(writeoffs, excel_name="writeoffs.xlsx", table="writeoffs", key="writeoff_id", unique=True)
+    emit(items, excel_name="writeoff_items.xlsx", table="writeoff_items", key="writeoff_id")
 
-    writeoffs.to_excel(os.path.join(OUTPUT_DIR, "writeoffs.xlsx"),       index=False)
-    items.to_excel(os.path.join(OUTPUT_DIR, "writeoff_items.xlsx"),      index=False)
-
-    save_to_db(writeoffs, "writeoffs")
-    save_to_db(items,     "writeoff_items")
-
-    print("=== Writeoff pipeline tugadi ===")
+    log.info("Writeoff pipeline finished")

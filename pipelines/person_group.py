@@ -1,60 +1,46 @@
-import os
 import pandas as pd
 
-from config import ENDPOINTS, OUTPUT_DIR, get_headers
 from client import fetch
-from loader import save_to_db
+from config import ENDPOINTS, get_headers
+from logging_config import get_logger
+from pipeline_utils import emit
+from transforms import explode_records, select, to_int64
+
+log = get_logger(__name__)
+
+_TYPE_COLUMNS = ["person_group_id", "person_type_id", "code", "name", "state", "order_no"]
 
 
 def build_person_groups(raw: pd.DataFrame) -> pd.DataFrame:
-    columns = ["person_group_id", "code", "name", "person_kind", "state"]
-    df = raw[[c for c in columns if c in raw.columns]].copy()
-    df["person_group_id"] = pd.to_numeric(df["person_group_id"], errors="coerce").astype("Int64")
+    df = select(raw, ["person_group_id", "code", "name", "person_kind", "state"])
+    to_int64(df, ["person_group_id"])
     return df.drop_duplicates(subset=["person_group_id"]).reset_index(drop=True)
 
 
 def build_person_group_types(raw: pd.DataFrame) -> pd.DataFrame:
-    rows = []
-    for _, row in raw[["person_group_id", "person_group_types"]].iterrows():
-        items = row["person_group_types"]
-        if not isinstance(items, list):
-            continue
-        for t in items:
-            rows.append({
-                "person_group_id": row["person_group_id"],
-                "person_type_id":  t.get("person_type_id"),
-                "code":            t.get("code"),
-                "name":            t.get("name"),
-                "state":           t.get("state"),
-                "order_no":        t.get("order_no"),
-            })
-
-    if not rows:
-        return pd.DataFrame(columns=["person_group_id", "person_type_id", "code", "name", "state", "order_no"])
-
-    df = pd.DataFrame(rows)
-    df["person_group_id"] = pd.to_numeric(df["person_group_id"], errors="coerce").astype("Int64")
-    df["person_type_id"]  = pd.to_numeric(df["person_type_id"],  errors="coerce").astype("Int64")
+    df = explode_records(raw, "person_group_id", "person_group_types")
+    if df.empty:
+        return pd.DataFrame(columns=_TYPE_COLUMNS)
+    df = df.reindex(columns=_TYPE_COLUMNS)
+    to_int64(df, ["person_group_id", "person_type_id"])
     return df.drop_duplicates(subset=["person_group_id", "person_type_id"]).reset_index(drop=True)
 
 
 def run():
-    print("=== Person Group pipeline ===")
+    log.info("Person Group pipeline started")
 
     raw = fetch(ENDPOINTS["Persons_group"], get_headers(), key="person_group")
     if raw.empty:
-        print("[INFO] Hech qanday ma'lumot topilmadi.")
+        log.info("No person groups found.")
         return
 
     groups = build_person_groups(raw)
-    types  = build_person_group_types(raw)
+    types = build_person_group_types(raw)
+    log.info("Person groups: %d groups, %d types", len(groups), len(types))
 
-    print(f"[JAMI] {len(groups)} ta group, {len(types)} ta type")
+    emit(groups, excel_name="person_groups.xlsx", table="person_groups",
+         key="person_group_id", unique=True)
+    emit(types, excel_name="person_group_types.xlsx",
+         table="person_group_types", key="person_group_id")
 
-    groups.to_excel(os.path.join(OUTPUT_DIR, "person_groups.xlsx"),      index=False)
-    types.to_excel(os.path.join(OUTPUT_DIR, "person_group_types.xlsx"),  index=False)
-
-    save_to_db(groups, "person_groups")
-    save_to_db(types,  "person_group_types")
-
-    print("=== Person Group pipeline tugadi ===")
+    log.info("Person Group pipeline finished")

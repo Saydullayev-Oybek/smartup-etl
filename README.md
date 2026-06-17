@@ -1,167 +1,151 @@
-# SmartUp ETL Pipeline
+# SmartUp ETL
 
-SmartUp ERP API dan ma'lumot olib, pandas bilan tozalab, Excel va PostgreSQL ga yuklaydigan ETL loyiha.
-
----
-
-## Loyiha strukturasi
-
-```
-smartup-etl/
-│
-├── config.py               ← API endpointlari, DB URL, auth headers
-├── client.py               ← fetch() va fetch_post() — API so'rovlari
-├── loader.py               ← save_to_db() — DataFrame → PostgreSQL
-├── main.py                 ← ishga tushiruvchi, barcha pipelinelarni chaqiradi
-│
-├── pipelines/
-│   ├── products.py         ← products, product_group, inv_kind, sector
-│   ├── orders.py           ← orders, order_products, gifts, actions, consignments
-│   ├── natural_person.py   ← natural_persons, group, room
-│   ├── legal_person.py     ← legal_persons, group, bank_account, room
-│   ├── visit.py            ← visits, visit_person_types, visit_comments
-│   ├── writeoff.py         ← writeoffs, writeoff_items
-│   ├── payments.py         ← payments
-│   ├── cash_operations.py  ← cash_operations, cash_operation_refs
-│   ├── product_group.py    ← product_groups, product_group_types
-│   ├── inventory_price.py  ← inventory_prices
-│   ├── person_group.py     ← person_groups, person_group_types
-│   ├── returns.py          ← returns, return_products (mijozlardan)
-│   └── returns_to_supplier.py ← supplier_returns, supplier_return_items
-│
-├── auth.json.example       ← namuna (auth.json gitignore da)
-├── requerements.txt        ← dependencies
-└── CleanedData/            ← Excel fayllar (avtomatik yaratiladi)
-```
+ETL pipeline that pulls data from the SmartUp ERP API, transforms it with
+pandas, and loads it into PostgreSQL (and optional Excel exports). Runs
+stand-alone (`python main.py`) or on a schedule via Apache Airflow.
 
 ---
 
-## O'rnatish
+## Architecture
 
-### 1. Reponi clone qiling
+```
+SmartUp API ──> client.py ──> pipelines/*.py ──> pipeline_utils.emit() ──> loader.py ──> PostgreSQL
+                (fetch,         (transform,         (validate +              (idempotent
+                 retry)          explode)            Excel + load)            merge)
+```
+
+| Module | Role |
+| --- | --- |
+| [config.py](config.py) | Env-driven config: endpoints, DB URL, auth, retry/load settings. No secrets in source. |
+| [client.py](client.py) | `fetch` / `fetch_post` — pooled `requests.Session` with retry/backoff; raises `FetchError`. |
+| [transforms.py](transforms.py) | Vectorised helpers: `explode_records`, `to_int64`, `to_numeric`, `select`. |
+| [validation.py](validation.py) | Pre-load data-quality checks (null/duplicate keys); warn or strict. |
+| [loader.py](loader.py) | `save_to_db` — engine singleton, transactional, idempotent merge (or legacy replace). |
+| [pipeline_utils.py](pipeline_utils.py) | `emit` — validate + optional Excel + load, in one call. |
+| [logging_config.py](logging_config.py) | Central logging (text or JSON, env-driven level). |
+| [main.py](main.py) | Entry point — runs every pipeline with per-pipeline failure isolation. |
+| [dags/smartup_etl_dag.py](dags/smartup_etl_dag.py) | Airflow DAG (dimensions → barrier → facts). |
+
+---
+
+## Quick start
 
 ```bash
-git clone https://github.com/Saydullayev-Oybek/smartup-etl.git
-cd smartup-etl
-```
+python -m venv .venv && . .venv/Scripts/activate
+pip install -r requirements.txt          # prod   (or requirements-dev.txt for tests)
 
-### 2. Virtual environment yarating va kutubxonalarni o'rnating
+cp .env.example .env                      # then fill in credentials
+#   SMARTUP_USERNAME / SMARTUP_PASSWORD   (or create auth.json)
+#   DB_PASSWORD (or full DB_URL)
 
-```bash
-python -m venv venv
-venv\Scripts\activate
-pip install -r requerements.txt
-```
-
-### 3. `auth.json` faylini yarating
-
-```bash
-copy auth.json.example auth.json
-```
-
-`auth.json` ni oching va SmartUp login/parolingizni kiriting:
-
-```json
-{
-    "username": "SIZNING_LOGINIZ",
-    "password": "SIZNING_PAROLINGIZ"
-}
-```
-
-### 4. `config.py` da DB URL ni sozlang
-
-```python
-DB_URL = "postgresql://postgres:PAROLINGIZ@localhost:5432/smartup"
-```
-
-### 5. Ishga tushiring
-
-```bash
 python main.py
 ```
 
----
+### Configuration (environment variables)
 
-## Pipelinelar va jadvallar
-
-| Pipeline | Jadvallar | Tavsif |
+| Variable | Default | Purpose |
 | --- | --- | --- |
-| `products` | `products`, `product_group`, `product_inventory_kind`, `product_sector` | Mahsulot katalogi |
-| `orders` | `orders`, `order_products`, `order_gifts`, `order_actions`, `order_consignments` | Buyurtmalar (POST, 30-kunlik chunk) |
-| `natural_person` | `natural_persons`, `natural_person_group`, `natural_person_room` | Jismoniy shaxslar |
-| `legal_person` | `legal_persons`, `legal_person_group`, `legal_person_bank_account`, `legal_person_room` | Yuridik shaxslar |
-| `visit` | `visits`, `visit_person_types`, `visit_comments` | Savdo vakili tashriflari |
-| `writeoff` | `writeoffs`, `writeoff_items` | Hisobdan chiqarishlar |
-| `payments` | `payments` | Mijozlardan to'lovlar |
-| `cash_operations` | `cash_operations`, `cash_operation_refs` | Kassa operatsiyalari |
-| `product_group` | `product_groups`, `product_group_types` | Mahsulot guruhlari |
-| `inventory_price` | `inventory_prices` | Mahsulot narxlari |
-| `person_group` | `person_groups`, `person_group_types` | Shaxs guruhlari |
-| `returns` | `returns`, `return_products` | Mijozlardan qaytarish |
-| `returns_to_supplier` | `supplier_returns`, `supplier_return_items` | Yetkazib beruvchilarga qaytarish |
+| `SMARTUP_USERNAME` / `SMARTUP_PASSWORD` | — | API credentials (fallback: `auth.json`) |
+| `DB_URL` *or* `DB_USER`/`DB_PASSWORD`/`DB_HOST`/`DB_PORT`/`DB_NAME` | localhost/smartup | Target database |
+| `LOAD_STRATEGY` | `upsert` | `upsert` (idempotent merge) or `replace` (legacy) |
+| `WRITE_EXCEL` | `true` | Also export each table to `CleanedData/*.xlsx` |
+| `ORDERS_BEGIN_DATE` | `01.01.2026` | Start date for the orders backfill |
+| `VALIDATION_STRICT` | `false` | Raise (vs warn) on data-quality failures |
+| `LOG_LEVEL` / `LOG_JSON` | `INFO` / `false` | Logging verbosity / structured output |
+
+A local `.env` is loaded automatically; real environment variables always win.
 
 ---
 
-## ETL jarayoni
+## Load strategy & idempotency
 
-```
-SmartUp API → client.py (fetch/fetch_post) → pipelines/*.py (transform) → loader.py + Excel
-```
+Every table refreshes by a **single parent-entity id** — a dimension by its own
+id, a child/bridge table by its parent id. The default `upsert` strategy, inside
+one transaction, deletes the rows whose key appears in the incoming batch and
+re-inserts them. This means:
 
-### GET endpointlari (filtr yo'q, barcha ma'lumot)
+- **Idempotent** — re-running a load produces the same result, no duplicates.
+- **History-preserving** — entities not in the batch are left untouched (the
+  table and its indexes are never dropped).
+- **Atomic** — a mid-run failure rolls back instead of leaving a torn table.
 
-```python
-raw = fetch(url, headers, key="...")
-```
-
-### POST endpointlari (sana oralig'i bilan, 30-kunlik chunk)
-
-```python
-raw = fetch_post(url, headers, body={"begin_modified_on": "...", "end_modified_on": "..."}, key="...")
-```
+Set `LOAD_STRATEGY=replace` to fall back to the legacy drop-and-recreate.
 
 ---
 
-## Yangi pipeline qo'shish
+## Pipelines and tables
 
-1. **`config.py`** ga endpoint qo'shing:
+| Pipeline | Tables |
+| --- | --- |
+| `products` | `products`, `product_group`, `product_inventory_kind`, `product_sector` |
+| `orders` | `orders`, `order_products`, `order_gifts`, `order_actions`, `order_consignments` |
+| `natural_person` | `natural_persons`, `natural_person_group`, `natural_person_room` |
+| `legal_person` | `legal_persons`, `legal_person_group`, `legal_person_bank_account`, `legal_person_room` |
+| `visit` | `visits`, `visit_person_types`, `visit_comments` |
+| `writeoff` | `writeoffs`, `writeoff_items` |
+| `payments` | `payments` |
+| `cash_operations` | `cash_operations`, `cash_operation_refs` |
+| `product_group` | `product_groups`, `product_group_types` |
+| `inventory_price` | `inventory_prices` |
+| `person_group` | `person_groups`, `person_group_types` |
+| `returns` | `returns`, `return_products` |
+| `returns_to_supplier` | `supplier_returns`, `supplier_return_items` |
+
+---
+
+## Adding a new pipeline
+
+1. Add the endpoint to `ENDPOINTS` in [config.py](config.py).
+2. Create `pipelines/<name>.py`:
 
 ```python
-ENDPOINTS = {
-    ...
-    "new_entity": "https://smartup.online/b/.../new_entity$export",
-}
-```
+from client import fetch
+from config import ENDPOINTS, get_headers
+from pipeline_utils import emit
+from transforms import select, to_int64
 
-1. **`pipelines/new_entity.py`** yarating (`products.py` ga qarab):
-
-```python
-def build_new_entity(raw: pd.DataFrame) -> pd.DataFrame:
-    ...
+def build_entity(raw):
+    df = select(raw, ["entity_id", "name", ...])
+    to_int64(df, ["entity_id"])
+    return df.drop_duplicates(subset=["entity_id"]).reset_index(drop=True)
 
 def run():
-    raw = fetch(ENDPOINTS["new_entity"], get_headers(), key="new_entity")
-    df = build_new_entity(raw)
-    df.to_excel(os.path.join(OUTPUT_DIR, "new_entity.xlsx"), index=False)
-    save_to_db(df, "new_entity")
+    raw = fetch(ENDPOINTS["entity"], get_headers(), key="entity")
+    if raw.empty:
+        return
+    emit(build_entity(raw), excel_name="entity.xlsx", table="entity",
+         key="entity_id", unique=True)
 ```
 
-1. **`main.py`** ga qo'shing:
+3. Register it in `PIPELINES` in [main.py](main.py) and as a task in the DAG.
 
-```python
-from pipelines import ..., new_entity
+---
 
-new_entity.run()
+## Running on Airflow
+
+```bash
+docker compose build       # builds the custom image (deps baked in)
+docker compose up -d
+```
+
+The DAG `smartup_etl` runs daily at 02:00: dimension pipelines in parallel, a
+barrier, then the fact pipelines in parallel. Each task retries with backoff.
+The ETL writes to the warehouse DB configured via `DB_URL`/`DB_*` env vars (not
+the Airflow metadata database).
+
+---
+
+## Testing & linting
+
+```bash
+pip install -r requirements-dev.txt
+pytest          # unit + integration (loader on SQLite, client mocked)
+ruff check .
 ```
 
 ---
 
-## Xatolar
+## Security
 
-| Xato | Sabab | Yechim |
-| --- | --- | --- |
-| `[XATO] Status: 401` | Login/parol noto'g'ri | `auth.json` ni tekshiring |
-| `[XATO] Status: 400` | Noto'g'ri so'rov parametri | `config.py` da endpoint yoki body ni tekshiring |
-| `[XATO] Status: 429` | API rate limit | Bir necha daqiqa kuting |
-| `connection refused` | PostgreSQL ishlamayapti | DB ni ishga tushiring |
-| `PermissionError` on xlsx | Fayl Excel da ochiq | Faylni yoping va qayta ishga tushiring |
+See [SECURITY.md](SECURITY.md). In short: secrets live in `.env` / `auth.json`
+(both gitignored); rotate the previously committed Airflow `FERNET_KEY`.

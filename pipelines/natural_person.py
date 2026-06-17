@@ -1,12 +1,16 @@
-import os
 import pandas as pd
 
-from config import ENDPOINTS, OUTPUT_DIR, get_headers
 from client import fetch
-from loader import save_to_db
+from config import ENDPOINTS, get_headers
+from logging_config import get_logger
+from pipeline_utils import emit
+from transforms import explode_records, select, to_int64
 
+log = get_logger(__name__)
 
-# ── Transform funksiyalari ────────────────────────────────────────────────────
+_GROUP_COLUMNS = ["person_id", "group_code", "type_code"]
+_ROOM_COLUMNS = ["person_id", "room_id", "room_code", "room_type_code"]
+
 
 def build_natural_persons(raw: pd.DataFrame) -> pd.DataFrame:
     columns = [
@@ -17,83 +21,47 @@ def build_natural_persons(raw: pd.DataFrame) -> pd.DataFrame:
         "is_budgetarian", "is_client", "is_supplier",
         "tin", "passport_number", "state",
     ]
-    df = raw[[c for c in columns if c in raw.columns]].copy()
-
-    df["person_id"] = pd.to_numeric(df["person_id"], errors="coerce").astype("Int64")
-
+    df = select(raw, columns)
+    to_int64(df, ["person_id"])
     return df.drop_duplicates(subset=["person_id"]).reset_index(drop=True)
 
 
 def build_natural_person_group(raw: pd.DataFrame) -> pd.DataFrame:
-    rows = []
-    for _, row in raw[["person_id", "groups"]].iterrows():
-        items = row["groups"]
-        if not isinstance(items, list):
-            continue
-        for g in items:
-            rows.append({
-                "person_id":  row["person_id"],
-                "group_code": g.get("group_code"),
-                "type_code":  g.get("type_code"),
-            })
-
-    if not rows:
-        return pd.DataFrame(columns=["person_id", "group_code", "type_code"])
-
-    df = pd.DataFrame(rows)
-    df["person_id"] = pd.to_numeric(df["person_id"], errors="coerce").astype("Int64")
+    df = explode_records(raw, "person_id", "groups")
+    if df.empty:
+        return pd.DataFrame(columns=_GROUP_COLUMNS)
+    df = df.reindex(columns=_GROUP_COLUMNS)
+    to_int64(df, ["person_id"])
     return df.drop_duplicates(subset=["person_id", "group_code"]).reset_index(drop=True)
 
 
 def build_natural_person_room(raw: pd.DataFrame) -> pd.DataFrame:
-    rows = []
-    for _, row in raw[["person_id", "rooms"]].iterrows():
-        items = row["rooms"]
-        if not isinstance(items, list):
-            continue
-        for r in items:
-            rows.append({
-                "person_id":      row["person_id"],
-                "room_id":        r.get("room_id"),
-                "room_code":      r.get("room_code"),
-                "room_type_code": r.get("room_type_code"),
-            })
-
-    if not rows:
-        return pd.DataFrame(columns=["person_id", "room_id", "room_code", "room_type_code"])
-
-    df = pd.DataFrame(rows)
-    df["person_id"] = pd.to_numeric(df["person_id"], errors="coerce").astype("Int64")
-    df["room_id"]   = pd.to_numeric(df["room_id"],   errors="coerce").astype("Int64")
+    df = explode_records(raw, "person_id", "rooms")
+    if df.empty:
+        return pd.DataFrame(columns=_ROOM_COLUMNS)
+    df = df.reindex(columns=_ROOM_COLUMNS)
+    to_int64(df, ["person_id", "room_id"])
     return df.drop_duplicates(subset=["person_id", "room_id"]).reset_index(drop=True)
 
 
-# ── Run ───────────────────────────────────────────────────────────────────────
-
 def run():
-    print("=== Natural Person pipeline ===")
+    log.info("Natural Person pipeline started")
 
-    # 1. Extract
     raw = fetch(ENDPOINTS["natural_person"], get_headers(), key="natural_person")
     if raw.empty:
-        print("[INFO] Hech qanday ma'lumot topilmadi.")
+        log.info("No natural persons found.")
         return
 
-    # 2. Transform
-    dim  = build_natural_persons(raw)
+    dim = build_natural_persons(raw)
     groups = build_natural_person_group(raw)
-    rooms  = build_natural_person_room(raw)
+    rooms = build_natural_person_room(raw)
+    log.info("Natural persons: %d persons, %d groups, %d rooms", len(dim), len(groups), len(rooms))
 
-    print(f"[JAMI] {len(dim)} ta shaxs, {len(groups)} ta group, {len(rooms)} ta room")
+    emit(dim, excel_name="natural_persons.xlsx", table="natural_persons",
+         key="person_id", unique=True)
+    emit(groups, excel_name="natural_person_group.xlsx",
+         table="natural_person_group", key="person_id")
+    emit(rooms, excel_name="natural_person_room.xlsx",
+         table="natural_person_room", key="person_id")
 
-    # 3. Load — Excel
-    dim.to_excel(os.path.join(OUTPUT_DIR, "natural_persons.xlsx"),             index=False)
-    groups.to_excel(os.path.join(OUTPUT_DIR, "natural_person_group.xlsx"),     index=False)
-    rooms.to_excel(os.path.join(OUTPUT_DIR, "natural_person_room.xlsx"),       index=False)
-
-    # 4. Load — PostgreSQL
-    save_to_db(dim,    "natural_persons")
-    save_to_db(groups, "natural_person_group")
-    save_to_db(rooms,  "natural_person_room")
-
-    print("=== Natural Person pipeline tugadi ===")
+    log.info("Natural Person pipeline finished")

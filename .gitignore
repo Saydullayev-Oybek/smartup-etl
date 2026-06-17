@@ -1,21 +1,41 @@
-# Maxfiy ma'lumotlar — hech qachon GitHub ga yuklanmasin
+# ── Secrets — never commit ────────────────────────────────────────────────────
 auth.json
+.env
+.env.*
+!.env.example
+*.cfg
+config/airflow.cfg
+secrets/
+*.pem
+*.key
 
-# Claude IDE fayllar
+# ── Claude / IDE ──────────────────────────────────────────────────────────────
 .claude/
 CLAUDE.md
-
-# IDE
 .vscode/
+.idea/
 
-# Virtual environment
+# ── Virtual environments ──────────────────────────────────────────────────────
 smartup_env/
 my_env/
+.venv/
+venv/
 
-# Python cache
+# ── Python cache / build ──────────────────────────────────────────────────────
 __pycache__/
 *.pyc
 *.pyo
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
-# Cleaned data (katta Excel fayllar)
+# ── Airflow runtime ───────────────────────────────────────────────────────────
+logs/
+plugins/
+
+# ── Cleaned data (large Excel files) ──────────────────────────────────────────
 CleanedData/*.xlsx
+CleanedData/*.csv

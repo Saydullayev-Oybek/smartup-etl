@@ -1,9 +1,12 @@
-import os
 import pandas as pd
 
-from config import ENDPOINTS, OUTPUT_DIR, get_headers
 from client import fetch
-from loader import save_to_db
+from config import ENDPOINTS, get_headers
+from logging_config import get_logger
+from pipeline_utils import emit
+from transforms import explode_records, select, to_int64, to_numeric
+
+log = get_logger(__name__)
 
 
 def build_cash_operations(raw: pd.DataFrame) -> pd.DataFrame:
@@ -15,51 +18,35 @@ def build_cash_operations(raw: pd.DataFrame) -> pd.DataFrame:
         "currency_code", "amount", "responsible_person_code",
         "collector_code", "note",
     ]
-    df = raw[[c for c in columns if c in raw.columns]].copy()
-
-    df["operation_id"] = pd.to_numeric(df["operation_id"], errors="coerce").astype("Int64")
-    df["amount"]       = pd.to_numeric(df["amount"],       errors="coerce")
-
+    df = select(raw, columns)
+    to_int64(df, ["operation_id"])
+    to_numeric(df, ["amount"])
     return df.drop_duplicates(subset=["operation_id"]).reset_index(drop=True)
 
 
 def build_cash_operation_refs(raw: pd.DataFrame) -> pd.DataFrame:
-    rows = []
-    for _, row in raw[["operation_id", "ref_codes"]].iterrows():
-        items = row["ref_codes"]
-        if not isinstance(items, list):
-            continue
-        for item in items:
-            item["operation_id"] = row["operation_id"]
-            rows.append(item)
-
-    if not rows:
-        return pd.DataFrame()
-
-    df = pd.DataFrame(rows)
-    df["operation_id"] = pd.to_numeric(df["operation_id"], errors="coerce").astype("Int64")
-    return df.reset_index(drop=True)
+    df = explode_records(raw, "operation_id", "ref_codes")
+    if df.empty:
+        return df
+    return to_int64(df, ["operation_id"]).reset_index(drop=True)
 
 
 def run():
-    print("=== Cash Operations pipeline ===")
+    log.info("Cash Operations pipeline started")
 
     raw = fetch(ENDPOINTS["Cash_Operations"], get_headers(), key="cash_operation")
     if raw.empty:
-        print("[INFO] Hech qanday ma'lumot topilmadi.")
+        log.info("No cash operations found.")
         return
 
-    ops  = build_cash_operations(raw)
+    ops = build_cash_operations(raw)
     refs = build_cash_operation_refs(raw)
+    log.info("Cash operations: %d ops, %d refs", len(ops), len(refs))
 
-    print(f"[JAMI] {len(ops)} ta operatsiya, {len(refs)} ta ref")
-
-    ops.to_excel(os.path.join(OUTPUT_DIR, "cash_operations.xlsx"),      index=False)
+    emit(ops, excel_name="cash_operations.xlsx", table="cash_operations",
+         key="operation_id", unique=True)
     if not refs.empty:
-        refs.to_excel(os.path.join(OUTPUT_DIR, "cash_operation_refs.xlsx"), index=False)
+        emit(refs, excel_name="cash_operation_refs.xlsx",
+             table="cash_operation_refs", key="operation_id")
 
-    save_to_db(ops, "cash_operations")
-    if not refs.empty:
-        save_to_db(refs, "cash_operation_refs")
-
-    print("=== Cash Operations pipeline tugadi ===")
+    log.info("Cash Operations pipeline finished")

@@ -1,9 +1,12 @@
-import os
 import pandas as pd
 
-from config import ENDPOINTS, OUTPUT_DIR, get_headers
 from client import fetch
-from loader import save_to_db
+from config import ENDPOINTS, get_headers
+from logging_config import get_logger
+from pipeline_utils import emit
+from transforms import select, to_int64, to_numeric
+
+log = get_logger(__name__)
 
 
 def build_payments(raw: pd.DataFrame) -> pd.DataFrame:
@@ -16,28 +19,23 @@ def build_payments(raw: pd.DataFrame) -> pd.DataFrame:
         "cashbox_code", "bank_account_code", "amount", "posted",
         "bank_trans_number", "bank_trans_date", "purpose", "note",
     ]
-    df = raw[[c for c in columns if c in raw.columns]].copy()
-
-    df["cashin_id"] = pd.to_numeric(df["cashin_id"], errors="coerce").astype("Int64")
-    df["client_id"] = pd.to_numeric(df["client_id"], errors="coerce").astype("Int64")
-    df["amount"]    = pd.to_numeric(df["amount"],    errors="coerce")
-
+    df = select(raw, columns)
+    to_int64(df, ["cashin_id", "client_id"])
+    to_numeric(df, ["amount"])
     return df.drop_duplicates(subset=["cashin_id"]).reset_index(drop=True)
 
 
 def run():
-    print("=== Payments pipeline ===")
+    log.info("Payments pipeline started")
 
     raw = fetch(ENDPOINTS["Payments_from_clients"], get_headers(), key="cashin")
     if raw.empty:
-        print("[INFO] Hech qanday ma'lumot topilmadi.")
+        log.info("No payments found.")
         return
 
     payments = build_payments(raw)
-    print(f"[JAMI] {len(payments)} ta to'lov")
+    log.info("Payments: %d rows", len(payments))
 
-    payments.to_excel(os.path.join(OUTPUT_DIR, "payments.xlsx"), index=False)
-    save_to_db(payments, "payments")
+    emit(payments, excel_name="payments.xlsx", table="payments", key="cashin_id", unique=True)
 
-    print("=== Payments pipeline tugadi ===")
-
+    log.info("Payments pipeline finished")
