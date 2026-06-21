@@ -6,7 +6,7 @@ integrates cleanly with Airflow's task log capture.
 
 Usage::
 
-    from logging_config import get_logger
+    from core.logging_config import get_logger
     log = get_logger(__name__)
     log.info("Products pipeline started")
 """

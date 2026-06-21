@@ -29,7 +29,7 @@ def _run(module_name: str, **kwargs) -> None:
     """Import a pipeline module and run it (lazy import keeps DAG parsing fast)."""
     from importlib import import_module
 
-    from pipeline_utils import ensure_output_dir
+    from core.pipeline_utils import ensure_output_dir
 
     ensure_output_dir()
     import_module(f"pipelines.{module_name}").run(**kwargs)

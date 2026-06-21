@@ -48,3 +48,5 @@ def emit(
     validate_table(df, table, key=key, unique=unique)
     write_excel(df, excel_name)
     save_to_db(df, table, key=key)
+
+
