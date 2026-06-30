@@ -72,7 +72,8 @@ def build_order_actions(raw: pd.DataFrame) -> pd.DataFrame:
         return df
     to_int64(df, ["deal_id"])
     to_numeric(df, ["order_quant", "sold_quant", "return_quant", "bonus_id"])
-    return df.reset_index(drop=True)
+    nested = ["details", "action_margins"]
+    return df.drop(columns=[c for c in nested if c in df.columns]).reset_index(drop=True)
 
 
 def build_order_consignments(raw: pd.DataFrame) -> pd.DataFrame:
@@ -80,7 +81,8 @@ def build_order_consignments(raw: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
     to_int64(df, ["deal_id"])
-    to_numeric(df, ["consignment_unit_id", "consignment_amount"])
+    to_int64(df, ["consignment_unit_id"])
+    to_numeric(df, ["consignment_amount"])
     return df.reset_index(drop=True)
 
 
