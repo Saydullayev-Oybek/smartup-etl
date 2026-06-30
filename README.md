@@ -1,84 +1,127 @@
 # SmartUp ETL
 
-ETL pipeline that pulls data from the SmartUp ERP API, transforms it with
-pandas, and loads it into PostgreSQL (and optional Excel exports). Runs
-stand-alone (`python main.py`) or on a schedule via Apache Airflow.
+SmartUp ERP tizimidan ma'lumot olib, tozalab, PostgreSQL ga yuklaydi.
+Har bir pipeline API → pandas transform → DB upsert zanjirida ishlaydi.
 
 ---
 
-## Architecture
+## Ishlatish usullari
 
-```
-SmartUp API ──> core/client.py ──> pipelines/*.py ──> core.pipeline_utils.emit() ──> core/loader.py ──> PostgreSQL
-                (fetch,             (transform,          (validate +                   (idempotent
-                 retry)              explode)             Excel + load)                 merge)
-```
-
-Reusable building blocks live in the **`core/`** package; one pipeline per SmartUp
-entity lives in **`pipelines/`** and imports from `core.*`.
-
-| Module | Role |
-| --- | --- |
-| [core/config.py](core/config.py) | Env-driven config: endpoints, DB URL, auth, retry/load settings. No secrets in source. |
-| [core/client.py](core/client.py) | `fetch` / `fetch_post` — pooled `requests.Session` with retry/backoff; raises `FetchError`. |
-| [core/transforms.py](core/transforms.py) | Vectorised helpers: `explode_records`, `to_int64`, `to_numeric`, `select`. |
-| [core/validation.py](core/validation.py) | Pre-load data-quality checks (null/duplicate keys); warn or strict. |
-| [core/loader.py](core/loader.py) | `save_to_db` — engine singleton, transactional, idempotent merge (or legacy replace). |
-| [core/pipeline_utils.py](core/pipeline_utils.py) | `emit` — validate + optional Excel + load, in one call. |
-| [core/logging_config.py](core/logging_config.py) | Central logging (text or JSON, env-driven level); `core/exceptions.py` — typed errors. |
-| [main.py](main.py) | Entry point — runs every pipeline with per-pipeline failure isolation. |
-| [dags/smartup_etl_dag.py](dags/smartup_etl_dag.py) | Airflow DAG (dimensions → barrier → facts). |
+Loyihani **3 xil usulda** ishlatish mumkin. O'zingizga mosini tanlang:
 
 ---
 
-## Quick start
+### 1-usul — Faqat Excel (eng oddiy, Docker kerak emas)
+
+PostgreSQL ham, Docker ham kerak emas. Ma'lumotlar `CleanedData/` papkasiga `.xlsx` formatda saqlanadi.
 
 ```bash
+# 1. Virtual muhit
 python -m venv .venv && . .venv/Scripts/activate
-pip install -r requirements.txt          # prod   (or requirements-dev.txt for tests)
+pip install -r requirements.txt
 
-cp .env.example .env                      # then fill in credentials
-#   SMARTUP_USERNAME / SMARTUP_PASSWORD   (or create auth.json)
-#   DB_PASSWORD (or full DB_URL)
+# 2. .env faylini yarating
+cp .env.example .env
+```
 
+`.env` faylida faqat shu ikki narsani to'ldiring:
+
+```env
+SMARTUP_USERNAME=your-username
+SMARTUP_PASSWORD=your-password
+EXCEL_ONLY=true
+```
+
+```bash
+# 3. Ishga tushiring
 python main.py
 ```
 
-### Configuration (environment variables)
+Natija: `CleanedData/` papkasida Excel fayllar paydo bo'ladi.
 
-| Variable | Default | Purpose |
+---
+
+### 2-usul — Docker bilan (to'liq stack: DB + Airflow + pgAdmin)
+
+Docker Desktop o'rnatilgan bo'lishi kerak.
+
+```bash
+# 1. .env faylini yarating va to'ldiring
+cp .env.example .env
+```
+
+`.env` da to'ldiradigan asosiy qiymatlar:
+
+```env
+SMARTUP_USERNAME=your-username
+SMARTUP_PASSWORD=your-password
+DB_PASSWORD=your-db-password
+DB_HOST=smartup-db        # Docker ichida ishlaydi, o'zgartirmang
+EXCEL_ONLY=false
+PGADMIN_EMAIL=admin@smartup.com
+PGADMIN_PASSWORD=your-pgadmin-password
+_AIRFLOW_WWW_USER_PASSWORD=your-airflow-password
+```
+
+```bash
+# 2. Barcha servislani ishga tushiring
+docker compose up -d --build
+```
+
+| Xizmat | Manzil | Login |
 | --- | --- | --- |
-| `SMARTUP_USERNAME` / `SMARTUP_PASSWORD` | — | API credentials (fallback: `auth.json`) |
-| `DB_URL` *or* `DB_USER`/`DB_PASSWORD`/`DB_HOST`/`DB_PORT`/`DB_NAME` | localhost/smartup | Target database |
-| `LOAD_STRATEGY` | `upsert` | `upsert` (idempotent merge) or `replace` (legacy) |
-| `WRITE_EXCEL` | `true` | Also export each table to `CleanedData/*.xlsx` |
-| `ORDERS_BEGIN_DATE` | `01.01.2026` | Start date for the orders backfill |
-| `VALIDATION_STRICT` | `false` | Raise (vs warn) on data-quality failures |
-| `LOG_LEVEL` / `LOG_JSON` | `INFO` / `false` | Logging verbosity / structured output |
+| Airflow | <http://localhost:8080> | airflow / `_AIRFLOW_WWW_USER_PASSWORD` |
+| pgAdmin | <http://localhost:5050> | `PGADMIN_EMAIL` / `PGADMIN_PASSWORD` |
+| PostgreSQL | localhost:**5433** | postgres / `DB_PASSWORD` |
 
-A local `.env` is loaded automatically; real environment variables always win.
+**pgAdmin da DB ga ulanish:** Host = `smartup-db`, Port = `5432`, DB = `smartup`
+
+Airflow DAG `smartup_etl` har kuni 02:00 da ishlaydi. Qo'lda ham ishlatish mumkin.
 
 ---
 
-## Load strategy & idempotency
+### 3-usul — Lokal Python + Docker DB
 
-Every table refreshes by a **single parent-entity id** — a dimension by its own
-id, a child/bridge table by its parent id. The default `upsert` strategy, inside
-one transaction, deletes the rows whose key appears in the incoming batch and
-re-inserts them. This means:
+Docker orqali faqat DB ni ishga tushirib, Python skriptni lokal ishlatish.
 
-- **Idempotent** — re-running a load produces the same result, no duplicates.
-- **History-preserving** — entities not in the batch are left untouched (the
-  table and its indexes are never dropped).
-- **Atomic** — a mid-run failure rolls back instead of leaving a torn table.
+```bash
+# 1. Faqat DB ni ishga tushiring
+docker compose up -d smartup-db
 
-Set `LOAD_STRATEGY=replace` to fall back to the legacy drop-and-recreate.
+# 2. .env da DB_HOST ni localhost ga o'zgartiring
+```
+
+```env
+SMARTUP_USERNAME=your-username
+SMARTUP_PASSWORD=your-password
+DB_HOST=localhost
+DB_PORT=5433              # Docker 5433 portini tashqariga ochadi
+DB_PASSWORD=your-db-password
+EXCEL_ONLY=false
+```
+
+```bash
+# 3. Ishga tushiring
+python main.py
+```
 
 ---
 
-## Pipelines and tables
+## DB_HOST — muhim eslatma
 
-| Pipeline | Tables |
+| Qayerdan ishlatyapsiz | `DB_HOST` | `DB_PORT` |
+| --- | --- | --- |
+| Docker container ichidan (Airflow) | `smartup-db` | `5432` |
+| Lokal `python main.py` + Docker DB | `localhost` | `5433` |
+| Lokal `python main.py` + lokal PG | `localhost` | `5432` |
+
+---
+
+## Pipelinelar
+
+Barcha pipelinelar `pipelines/` papkasida joylashgan.
+
+| Pipeline | Yaratadigan jadvallar |
 | --- | --- |
 | `products` | `products`, `product_group`, `product_inventory_kind`, `product_sector` |
 | `orders` | `orders`, `order_products`, `order_gifts`, `order_actions`, `order_consignments` |
@@ -93,62 +136,40 @@ Set `LOAD_STRATEGY=replace` to fall back to the legacy drop-and-recreate.
 | `person_group` | `person_groups`, `person_group_types` |
 | `returns` | `returns`, `return_products` |
 | `returns_to_supplier` | `supplier_returns`, `supplier_return_items` |
+| `bank_statements` | `bank_statements` |
 
 ---
 
-## Adding a new pipeline
+## Arxitektura
 
-1. Add the endpoint to `ENDPOINTS` in [core/config.py](core/config.py).
-2. Create `pipelines/<name>.py`:
-
-```python
-from core.client import fetch
-from core.config import ENDPOINTS, get_headers
-from core.pipeline_utils import emit
-from core.transforms import select, to_int64
-
-def build_entity(raw):
-    df = select(raw, ["entity_id", "name", ...])
-    to_int64(df, ["entity_id"])
-    return df.drop_duplicates(subset=["entity_id"]).reset_index(drop=True)
-
-def run():
-    raw = fetch(ENDPOINTS["entity"], get_headers(), key="entity")
-    if raw.empty:
-        return
-    emit(build_entity(raw), excel_name="entity.xlsx", table="entity",
-         key="entity_id", unique=True)
+```text
+SmartUp API → client.py → pipelines/*.py → pipeline_utils.emit() → loader.py → PostgreSQL
+              (fetch,      (transform,       (validate +              (idempotent
+               retry)       explode)          Excel + load)            upsert)
 ```
 
-3. Register it in `PIPELINES` in [main.py](main.py) and as a task in the DAG.
+`core/` — barcha qurilish bloklari (config, client, loader, transforms, validation)  
+`pipelines/` — har bir entity uchun alohida pipeline  
+`dags/` — Airflow DAG (dimensionlar → facts)
 
 ---
 
-## Running on Airflow
+## DB backup
 
 ```bash
-docker compose build       # builds the custom image (deps baked in)
-docker compose up -d
-```
+# Saqlash
+docker compose exec -T smartup-db pg_dump -U postgres -d smartup > backup.dump
 
-The DAG `smartup_etl` runs daily at 02:00: dimension pipelines in parallel, a
-barrier, then the fact pipelines in parallel. Each task retries with backoff.
-The ETL writes to the warehouse DB configured via `DB_URL`/`DB_*` env vars (not
-the Airflow metadata database).
+# Qayta yuklash
+docker compose exec -T smartup-db psql -U postgres -d smartup < backup.dump
+```
 
 ---
 
-## Testing & linting
+## Test va lint
 
 ```bash
 pip install -r requirements-dev.txt
-pytest          # unit + integration (loader on SQLite, client mocked)
+pytest
 ruff check .
 ```
-
----
-
-## Security
-
-See [SECURITY.md](SECURITY.md). In short: secrets live in `.env` / `auth.json`
-(both gitignored); rotate the previously committed Airflow `FERNET_KEY`.

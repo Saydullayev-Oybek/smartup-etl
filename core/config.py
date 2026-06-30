@@ -37,7 +37,14 @@ def _load_dotenv() -> None:
             if not line or line.startswith("#") or "=" not in line:
                 continue
             key, _, value = line.partition("=")
-            key, value = key.strip(), value.strip().strip('"').strip("'")
+            key = key.strip()
+            value = value.strip()
+            # Strip inline comments (e.g. EXCEL_ONLY=true  # comment)
+            if not (value.startswith('"') or value.startswith("'")):
+                comment_pos = value.find(" #")
+                if comment_pos != -1:
+                    value = value[:comment_pos].strip()
+            value = value.strip('"').strip("'")
             os.environ.setdefault(key, value)
     except OSError:
         # A missing/unreadable .env must never crash configuration loading.
@@ -103,6 +110,9 @@ LOAD_STRATEGY = os.getenv("LOAD_STRATEGY", "upsert").strip().lower()
 # ── Output ────────────────────────────────────────────────────────────────────
 OUTPUT_DIR    = os.getenv("OUTPUT_DIR", "CleanedData")
 WRITE_EXCEL   = _get_bool("WRITE_EXCEL", True)
+# When True, skip the database entirely and only write Excel files to OUTPUT_DIR.
+# Useful when no PostgreSQL/Docker is available. Forces WRITE_EXCEL=True implicitly.
+EXCEL_ONLY    = _get_bool("EXCEL_ONLY", False)
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 AUTH_FILE = Path(os.getenv("AUTH_FILE", _ROOT / "auth.json"))

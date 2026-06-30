@@ -89,6 +89,8 @@ x-airflow-common:
       condition: service_healthy
     postgres:
       condition: service_healthy
+    smartup-db:
+      condition: service_healthy
 
 services:
   postgres:
@@ -101,6 +103,23 @@ services:
       - postgres-db-volume:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: always
+
+  smartup-db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-smartup}
+    volumes:
+      - smartup-db-volume:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${DB_USER:-postgres}"]
       interval: 10s
       retries: 5
       start_period: 5s
@@ -334,5 +353,21 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@smartup.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin-volume:/var/lib/pgadmin
+    depends_on:
+      smartup-db:
+        condition: service_healthy
+    restart: always
+
 volumes:
   postgres-db-volume:
+  smartup-db-volume:
+  pgadmin-volume:

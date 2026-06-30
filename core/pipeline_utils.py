@@ -10,7 +10,7 @@ import os
 
 import pandas as pd
 
-from core.config import OUTPUT_DIR, WRITE_EXCEL
+from core.config import EXCEL_ONLY, OUTPUT_DIR, WRITE_EXCEL
 from core.loader import save_to_db
 from core.logging_config import get_logger
 from core.validation import validate_table
@@ -24,7 +24,7 @@ def ensure_output_dir() -> None:
 
 def write_excel(df: pd.DataFrame, filename: str) -> None:
     """Write ``df`` to ``OUTPUT_DIR/filename`` when Excel output is enabled."""
-    if not WRITE_EXCEL:
+    if not (WRITE_EXCEL or EXCEL_ONLY):
         return
     ensure_output_dir()
     path = os.path.join(OUTPUT_DIR, filename)
@@ -47,6 +47,7 @@ def emit(
     """
     validate_table(df, table, key=key, unique=unique)
     write_excel(df, excel_name)
-    save_to_db(df, table, key=key)
+    if not EXCEL_ONLY:
+        save_to_db(df, table, key=key)
 
 
