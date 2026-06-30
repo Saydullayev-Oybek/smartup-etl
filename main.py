@@ -12,6 +12,7 @@ import sys
 from core.logging_config import configure_logging, get_logger
 from core.pipeline_utils import ensure_output_dir
 from pipelines import (
+    bank_statements,
     cash_operations,
     inventory_price,
     legal_person,
@@ -46,6 +47,7 @@ PIPELINES = [
     ("cash_operations",     cash_operations.run),
     ("returns",             returns.run),
     ("returns_to_supplier", returns_to_supplier.run),
+    ("bank_statements",     bank_statements.run),
     ("orders",              lambda: orders.run(begin_date=ORDERS_BEGIN_DATE)),
 ]
 

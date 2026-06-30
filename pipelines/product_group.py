@@ -29,7 +29,7 @@ def build_product_group_types(raw: pd.DataFrame) -> pd.DataFrame:
 def run():
     log.info("Product Group pipeline started")
 
-    raw = fetch(ENDPOINTS["Product_group"], get_headers(), key="product_group")
+    raw = fetch(ENDPOINTS["product_group"], get_headers(), key="product_group")
     if raw.empty:
         log.info("No product groups found.")
         return

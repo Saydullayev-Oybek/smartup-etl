@@ -29,7 +29,7 @@ def build_person_group_types(raw: pd.DataFrame) -> pd.DataFrame:
 def run():
     log.info("Person Group pipeline started")
 
-    raw = fetch(ENDPOINTS["Persons_group"], get_headers(), key="person_group")
+    raw = fetch(ENDPOINTS["persons_group"], get_headers(), key="person_group")
     if raw.empty:
         log.info("No person groups found.")
         return

@@ -30,7 +30,7 @@ def _build_items(raw: pd.DataFrame) -> pd.DataFrame:
 def run():
     log.info("Returns to Supplier pipeline started")
 
-    raw = fetch(ENDPOINTS["Return_to_suppliers"], get_headers(), key="return")
+    raw = fetch(ENDPOINTS["return_to_supplier"], get_headers(), key="return")
     if raw.empty:
         log.info("No supplier returns found.")
         return

@@ -69,13 +69,13 @@ ENDPOINTS = {
     "return":                f"{BASE_URL}/b/anor/mxsx/mdeal/return$export",
     "visit":                 f"{BASE_URL}/b/trade/txs/tvt/visit$export",
     "writeoff":              f"{BASE_URL}/b/anor/mxsx/mkw/writeoff$export",
-    "Return_to_suppliers":   f"{BASE_URL}/b/anor/mxsx/mkw/return$export",
-    "Payments_from_clients": f"{BASE_URL}/b/trade/txs/tcs/cashin$export",
-    "Bank_Statements":       f"{BASE_URL}/b/anor/mxsx/mkcs/bank_operation$export",
-    "Cash_Operations":       f"{BASE_URL}/b/anor/mxsx/mkcs/cash_operation$export",
-    "Product_group":         f"{BASE_URL}/b/anor/mxsx/mr/product_group$export",
-    "Inventory_price":       f"{BASE_URL}/b/anor/api/v2/mkf/product_price$export",
-    "Persons_group":         f"{BASE_URL}/b/anor/mxsx/mr/person_group$export",
+    "return_to_supplier":    f"{BASE_URL}/b/anor/mxsx/mkw/return$export",
+    "payments_from_clients": f"{BASE_URL}/b/trade/txs/tcs/cashin$export",
+    "bank_statements":       f"{BASE_URL}/b/anor/mxsx/mkcs/bank_operation$export",
+    "cash_operations":       f"{BASE_URL}/b/anor/mxsx/mkcs/cash_operation$export",
+    "product_group":         f"{BASE_URL}/b/anor/mxsx/mr/product_group$export",
+    "inventory_price":       f"{BASE_URL}/b/anor/api/v2/mkf/product_price$export",
+    "persons_group":         f"{BASE_URL}/b/anor/mxsx/mr/person_group$export",
 }
 
 # ── Database ──────────────────────────────────────────────────────────────────

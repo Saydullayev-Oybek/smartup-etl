@@ -27,7 +27,7 @@ def build_inventory_prices(raw: pd.DataFrame) -> pd.DataFrame:
 def run():
     log.info("Inventory Price pipeline started")
 
-    raw = fetch(ENDPOINTS["Inventory_price"], get_headers(), key="inventory")
+    raw = fetch(ENDPOINTS["inventory_price"], get_headers(), key="inventory")
     if raw.empty:
         log.info("No inventory prices found.")
         return

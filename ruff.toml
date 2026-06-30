@@ -2,4 +2,9 @@ line-length = 100
 extend-exclude = ["my_env", ".claude"]
 
 [lint]
-select = ["E", "F", "W", "I"]
+select = ["E", "F", "W", "I", "B", "UP", "C90"]
+
+[lint.per-file-ignores]
+"tests/*" = ["B011"]
+# DAG complexity comes from Airflow @task definitions, not real cyclomatic complexity.
+"dags/*" = ["C901"]

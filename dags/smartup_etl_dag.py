@@ -11,8 +11,8 @@ from datetime import datetime, timedelta
 
 from airflow.decorators import dag, task
 
-# Project is mounted read-only at this path by docker-compose.
-sys.path.insert(0, "/opt/airflow/smartup_etl")
+# Project path is configurable via env var; default matches the docker-compose mount.
+sys.path.insert(0, os.getenv("SMARTUP_ETL_PATH", "/opt/airflow/smartup_etl"))
 
 ORDERS_BEGIN_DATE = os.getenv("ORDERS_BEGIN_DATE", "01.01.2026")
 
@@ -90,12 +90,15 @@ def smartup_etl():
     def returns_to_supplier(): _run("returns_to_supplier")
 
     @task
+    def bank_statements():     _run("bank_statements")
+
+    @task
     def orders():              _run("orders", begin_date=ORDERS_BEGIN_DATE)
 
     dims = [products(), product_group(), person_group(),
             natural_person(), legal_person(), inventory_price()]
     facts = [visit(), writeoff(), payments(), cash_operations(),
-             returns(), returns_to_supplier(), orders()]
+             returns(), returns_to_supplier(), bank_statements(), orders()]
 
     barrier = dimensions_ready()
     for d in dims:

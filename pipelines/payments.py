@@ -28,7 +28,7 @@ def build_payments(raw: pd.DataFrame) -> pd.DataFrame:
 def run():
     log.info("Payments pipeline started")
 
-    raw = fetch(ENDPOINTS["Payments_from_clients"], get_headers(), key="cashin")
+    raw = fetch(ENDPOINTS["payments_from_clients"], get_headers(), key="cashin")
     if raw.empty:
         log.info("No payments found.")
         return
